@@ -1,0 +1,17 @@
+{
+  "name": "AI Natural Language Query Engine",
+  "short_name": "Query Engine",
+  "description": "A natural language query engine powered by AI",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+cd ai-nle-poc\backend
+:: Navigate to the backend project folder
+
+python -m venv .venv
+:: Create a virtual environment named .venv to isolate dependencies
+
+.venv\Scripts\activate
+:: Activate the virtual environment (Windows CMD)
+
+pip install -r requirements.txt
+:: Install all Python dependencies listed in requirements.txt
+
+copy .env.example .env
+:: (Optional) Copy example environment variables to .env for local setup
+
+set DATABASE_URL=postgresql://postgres:postgres@localhost:5432/nlp_analytics
+:: Set the database URL for this session
+
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+:: Run the FastAPI development server with auto-reload on localhost:8000
