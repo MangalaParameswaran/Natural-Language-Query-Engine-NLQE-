@@ -1,6 +1,7 @@
 # db.py
 import os
 import psycopg
+from psycopg.rows import dict_row
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,6 +13,10 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 
+# ---------------------------------------------------
+# Optional (for FastAPI startup)
+# ---------------------------------------------------
+
 async def connect_db():
     try:
         conn = psycopg.connect(
@@ -19,7 +24,7 @@ async def connect_db():
             port=DB_PORT,
             dbname=DB_NAME,
             user=DB_USER,
-            password=DB_PASSWORD
+            password=DB_PASSWORD,
         )
         conn.close()
         print("--------Connected to PostgreSQL--------")
@@ -31,23 +36,30 @@ async def disconnect_db():
     print("--------PostgreSQL disconnect--------")
 
 
+# ---------------------------------------------------
+# New standard connection helper
+# ---------------------------------------------------
+
 def get_connection():
-    # ⭐ IMPROVED: autocommit + safe connection
-    conn = psycopg.connect(
+    return psycopg.connect(
         host=DB_HOST,
         port=DB_PORT,
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASSWORD,
-        autocommit=True  # ⭐ important for analytics queries
+        row_factory=dict_row,   # return dict-like rows
     )
-    return conn
+
+
+# ---------------------------------------------------
+# Execute SQL safely (for your NLQ engine)
+# ---------------------------------------------------
 
 
 def run_sql(sql: str):
     """
-    Runs given SQL and returns rows + columns.
-    Enterprise-safe SQL runner.
+    Runs SQL and returns:
+    { columns: [...], rows: [...] }
     """
     try:
         conn = get_connection()
@@ -63,18 +75,51 @@ def run_sql(sql: str):
             }
 
         cur.execute(sql)
+
         rows = cur.fetchall()
         cols = [desc[0] for desc in cur.description]
+
         conn.close()
 
-        return {"columns": cols, "rows": rows, "error": None}
+        return {
+            "columns": cols,
+            "rows": rows
+        }
 
     except Exception as e:
-        return {"error": str(e), "columns": [], "rows": []}
+        return {
+            "error": str(e),
+            "columns": [],
+            "rows": []
+        }
 
 
-# This will:
-# ✔ open connection
-# ✔ execute SQL
-# ✔ return rows + column names
-# ✔ safely catch errors
+# ---------------------------------------------------
+# NEW: Dynamic schema generator for LLM
+# ---------------------------------------------------
+    
+def get_database_schema():
+    """
+    Returns schema in this format:
+
+    TABLE customers(customer_id, name, ...)
+    TABLE sales(sale_id, sale_date, ...)
+    TABLE products(product_id, ...)
+    """
+
+    schema_sql = """
+    SELECT 
+        'TABLE ' || table_name || '(' ||
+        STRING_AGG(column_name, ', ' ORDER BY ordinal_position) || ')' AS schema_line
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+    GROUP BY table_name
+    ORDER BY table_name;
+    """
+
+    result = run_sql(schema_sql)
+
+    if "rows" in result:
+        return "\n".join([row["schema_line"] for row in result["rows"]])
+
+    return ""
