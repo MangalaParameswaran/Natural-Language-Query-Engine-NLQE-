@@ -53,6 +53,7 @@ User request:
     sql_only = match.group(1).strip() if match else raw_sql
 
     # ⭐ FIX: return dict instead of string
+    
     return {
         "sql": sql_only,
         "raw_response": raw_sql
