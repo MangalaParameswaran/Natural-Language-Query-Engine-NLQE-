@@ -12,6 +12,7 @@ export default function QueryBox() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
+  const [loadingStep, setLoadingStep] = useState("");
 
   const submit = async () => {
     setError(null);
@@ -20,9 +21,33 @@ export default function QueryBox() {
       return;
     }
     setLoading(true);
+    setLoadingStep("Sending query...");
 
     try {
+      // Simulate progress updates
+      const progressSteps = [
+        "Analyzing query intent...",
+        "Generating SQL query...",
+        "Executing database query...",
+        "Planning dashboard...",
+        "Generating insights...",
+        "Writing report...",
+        "Finalizing results..."
+      ];
+      
+      let stepIndex = 0;
+      const progressInterval = setInterval(() => {
+        if (stepIndex < progressSteps.length) {
+          setLoadingStep(progressSteps[stepIndex]);
+          stepIndex++;
+        }
+      }, 1000);
+
       const r = await axios.post("http://127.0.0.1:8000/api/query", { query });
+      
+      clearInterval(progressInterval);
+      setLoadingStep("Processing complete!");
+      
       // 🔧 CHANGED: save response into a shared place for ResponsePanel
       window.latestResponse = r.data;
       // also update history
@@ -31,14 +56,16 @@ export default function QueryBox() {
       const insPanel = document.getElementById("insights-panel");
       if (insPanel) {
         insPanel.innerHTML = ""; // clear
-        (r.data?.rows || []).slice(0,3).forEach((row, i) => {
+        (r.data?.data?.rows || r.data?.rows || []).slice(0,3).forEach((row, i) => {
           const el = document.createElement("div");
           el.style.color = "var(--muted)";
           el.style.fontSize = "13px";
-          el.textContent = `${i+1}. ${r.data.columns?.[0] || "col0"}: ${row[0]}  ${r.data.columns?.[1] ? ` | ${r.data.columns[1]}: ${row[1]}` : ""}`;
+          const data = r.data?.data || r.data;
+          el.textContent = `${i+1}. ${data.columns?.[0] || "col0"}: ${row[0]}  ${data.columns?.[1] ? ` | ${data.columns[1]}: ${row[1]}` : ""}`;
           insPanel.appendChild(el);
         });
-        if ((r.data?.rows || []).length === 0) {
+        const data = r.data?.data || r.data;
+        if ((data?.rows || []).length === 0) {
           const el = document.createElement("div");
           el.style.color = "var(--muted)";
           el.textContent = "No rows returned.";
@@ -50,8 +77,12 @@ export default function QueryBox() {
     } catch (e) {
       console.error(e);
       setError(e.response?.data?.detail || e.message || "Unknown error");
+      setLoadingStep("");
     } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setLoading(false);
+        setLoadingStep("");
+      }, 500);
     }
   };
 
@@ -63,15 +94,39 @@ export default function QueryBox() {
     <div>
       <div style={{ marginBottom: 8 }} className="small-muted">Enter natural language analytics query</div>
       <div className="query-input">
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder='Try: "Show monthly revenue last year by region"' />
-        <button onClick={submit} disabled={loading}>{loading ? "Running..." : "Run"}</button>
+        <input 
+          value={query} 
+          onChange={(e) => setQuery(e.target.value)} 
+          placeholder='Try: "Show monthly revenue last year by region"'
+          disabled={loading}
+          onKeyPress={(e) => e.key === 'Enter' && !loading && submit()}
+        />
+        <button onClick={submit} disabled={loading}>
+          {loading ? "Processing..." : "Run"}
+        </button>
       </div>
+      {loading && loadingStep && (
+        <div style={{ marginTop: 8, color: "var(--accent)", fontSize: 13 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="spinner" style={{ 
+              width: 16, 
+              height: 16, 
+              border: "2px solid rgba(124,108,255,0.3)",
+              borderTop: "2px solid var(--accent)",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite"
+            }}></div>
+            {loadingStep}
+          </div>
+        </div>
+      )}
       {error && <div style={{ color: "#ffb4b4", marginTop: 8 }}>{error}</div>}
 
-      <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-        <button onClick={() => applyExample("Show monthly revenue last year by region")}>Example 1</button>
-        <button onClick={() => applyExample("Top 10 customers by profit")}>Example 2</button>
-        <button onClick={() => applyExample("Compare sales vs marketing spend by quarter")}>Example 3</button>
+      <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => applyExample("Show last month sales")}>Sales</button>
+        <button onClick={() => applyExample("Create a dashboard for yesterday revenue")}>Dashboard</button>
+        <button onClick={() => applyExample("Top selling products last 2 months")}>Top Products</button>
+        <button onClick={() => applyExample("Write a performance report for my CEO")}>Report</button>
       </div>
 
       {history.length > 0 && (

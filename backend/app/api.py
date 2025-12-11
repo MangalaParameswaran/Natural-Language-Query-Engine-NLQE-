@@ -1,67 +1,55 @@
-# app/api.py
+# api.py
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Any, Dict
+from app.llm_agents.orchestrator import orchestrate_query
 
-from app.llm import parse_natural_query
-from app.db import run_sql
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 class QueryRequest(BaseModel):
     query: str
 
-class QueryResponse(BaseModel):
-    status: str
-    message: str
-    data: Dict[str, Any] = {}
-
-
-@router.post("/query", response_model=QueryResponse)
+@router.post("/query")
 async def run_query(req: QueryRequest):
+    import time
+    start_time = time.time()
     q = req.query.strip()
+    logger.info(f"📥 Received query request: '{q}'")
+    
     if not q:
-        raise HTTPException(status_code=400, detail="Query field cannot be empty")
-
-    # Step 1 — LLM natural language → SQL conversion
-    parsed = await parse_natural_query(q)
-
-    sql = parsed.get("sql", "").strip()
-    if not sql:
-        return {
-            "status": "error",
-            "message": "LLM did not return SQL",
-            "data": parsed
-        }
-
-    # Step 2 — Execute SQL safely
-    result = run_sql(sql)
-
-    rows = result.get("rows", [])
-    cols = result.get("columns", [])
-    err = result.get("error")
-    parsed["data_rows"] = rows
-    parsed["data_columns"] = cols
-    parsed["sql_error"] = err
-
-    # If SQL error
-    if err:
-        return {
-            "status": "error",
-            "message": "SQL execution failed",
-            "data": parsed
-        }
-
-    # No data
-    if len(rows) == 0:
-        return {
+        logger.warning("❌ Empty query received")
+        raise HTTPException(400, "Query cannot be empty")
+    
+    try:
+        logger.info(f"🔄 Processing query: '{q}'")
+        result = await orchestrate_query(q)
+        elapsed_time = time.time() - start_time
+        logger.info(f"⏱️ Query processed in {elapsed_time:.2f} seconds")
+        
+        # Structure response for frontend
+        response = {
             "status": "ok",
-            "message": "No data found",
-            "data": parsed
+            "message": "Query processed successfully",
+            "data": {
+                "intent": result.get("intent", "chart"),
+                "sql": result.get("sql_plan", {}).get("sql", ""),
+                "sql_explain": result.get("sql_plan", {}).get("explain", ""),
+                "columns": result.get("columns", []),
+                "rows": result.get("rows", []),
+                "sql_error": result.get("sql_error"),
+                "dashboard_plan": result.get("dashboard_plan", {}),
+                "insights": result.get("insights", []),
+                "report": result.get("report", {}),
+                "router": result.get("router", {})
+            }
         }
-
-    return {
-        "status": "ok",
-        "message": "Query processed",
-        "data": parsed
-    }
+        
+        logger.info(f"✅ Query processed successfully. Response size: {len(str(response))} characters")
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing query '{q}': {type(e).__name__}: {str(e)}", exc_info=True)
+        error_msg = f"Error processing query: {str(e)}"
+        raise HTTPException(500, error_msg)

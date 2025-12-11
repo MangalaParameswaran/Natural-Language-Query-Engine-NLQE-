@@ -98,28 +98,76 @@ def run_sql(sql: str):
 # NEW: Dynamic schema generator for LLM
 # ---------------------------------------------------
     
+# def get_database_schema():
+#     """
+#     Returns schema in this format:
+
+#     TABLE customers(customer_id, name, ...)
+#     TABLE sales(sale_id, sale_date, ...)
+#     TABLE products(product_id, ...)
+#     """
+
+#     schema_sql = """
+#     SELECT 
+#         'TABLE ' || table_name || '(' ||
+#         STRING_AGG(column_name, ', ' ORDER BY ordinal_position) || ')' AS schema_line
+#     FROM information_schema.columns
+#     WHERE table_schema = 'public'
+#     GROUP BY table_name
+#     ORDER BY table_name;
+#     """
+
+#     result = run_sql(schema_sql)
+
+#     if "rows" in result:
+#         return "\n".join([row["schema_line"] for row in result["rows"]])
+
+#     return ""
+
+
 def get_database_schema():
     """
-    Returns schema in this format:
-
-    TABLE customers(customer_id, name, ...)
-    TABLE sales(sale_id, sale_date, ...)
-    TABLE products(product_id, ...)
+    Return a large but structured schema string for the LLM:
+    TABLE invoice:
+      - invoice_number:varchar (pk)
+      - created_on:timestamp (sales date)
+      ...
     """
-
-    schema_sql = """
-    SELECT 
-        'TABLE ' || table_name || '(' ||
-        STRING_AGG(column_name, ', ' ORDER BY ordinal_position) || ')' AS schema_line
+    sql = """
+    SELECT table_name, column_name, data_type
     FROM information_schema.columns
-    WHERE table_schema = 'public'
-    GROUP BY table_name
-    ORDER BY table_name;
+    WHERE table_schema='public'
+    ORDER BY table_name, ordinal_position;
     """
+    res = run_sql(sql)
+    rows = res.get("rows", [])
+    if not rows:
+        return ""
 
-    result = run_sql(schema_sql)
+    schema_map = {}
+    for r in rows:
+        t = r["table_name"]
+        c = f"{r['column_name']}:{r['data_type']}"
+        schema_map.setdefault(t, []).append(c)
 
-    if "rows" in result:
-        return "\n".join([row["schema_line"] for row in result["rows"]])
-
-    return ""
+    # build lines with table descriptions for better LLM understanding
+    table_descriptions = {
+        "sales": "Main sales transactions table - contains sale_date, quantity, unit_price, revenue. Use for sales/revenue queries.",
+        "invoices": "Invoice records table - contains invoice_date, linked to sales via sale_id. Use for invoice/billing queries.",
+        "products": "Product catalog - contains product_id, name, category, price. Join with sales to get product details.",
+        "customers": "Customer information - contains customer_id, name, city, region_id. Join with sales to get customer details.",
+        "returns": "Return/refund transactions - contains return_date, linked to sales via sale_id. Use for return/refund queries.",
+        "regions": "Geographic regions - contains region_id, name. Join with customers to get regional data."
+    }
+    
+    lines = []
+    for table, cols in schema_map.items():
+        desc = table_descriptions.get(table, "")
+        if desc:
+            lines.append(f"TABLE {table}: {desc}")
+        else:
+            lines.append(f"TABLE {table}:")
+        for c in cols:
+            lines.append(f"  - {c}")
+        lines.append("")  # blank line between tables
+    return "\n".join(lines)

@@ -33,11 +33,13 @@ export default function ResponsePanel({ resp: propResp }) {
   }
 
   // unified format expected from backend:
-  // { status, message, sql, columns:[], rows:[], error }
-  const dataColumns = resp.columns || resp.data?.columns || [];
-  const dataRows = resp.rows || resp.data?.rows || [];
-  const sql = resp.sql || resp.data?.sql || "";
-  const error = resp.error || resp.data?.error || null;
+  // { status, message, data: { sql, columns:[], rows:[], sql_error, sql_explain, insights, dashboard_plan, report } }
+  const data = resp.data || {};
+  const dataColumns = resp.columns || data.columns || [];
+  const dataRows = resp.rows || data.rows || [];
+  const sql = resp.sql || data.sql || "";
+  const sqlExplain = data.sql_explain || "";
+  const error = resp.error || data.sql_error || null;
 
   const objects = rowsToObjects(dataColumns, dataRows);
 
@@ -83,8 +85,9 @@ export default function ResponsePanel({ resp: propResp }) {
       {error && <div style={{ marginTop: 8, color: "#ffb4b4" }}>{error}</div>}
 
       <div style={{ marginTop: 12 }}>
-        <strong>SQL</strong>
-        <pre style={{ background: "rgba(255,255,255,0.02)", padding: 8, borderRadius: 6 }}>{sql}</pre>
+        <strong>SQL Query</strong>
+        {sqlExplain && <div className="small-muted" style={{ marginBottom: 4 }}>{sqlExplain}</div>}
+        <pre style={{ background: "rgba(255,255,255,0.02)", padding: 8, borderRadius: 6, fontSize: 12, overflowX: "auto" }}>{sql || "No SQL generated"}</pre>
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -134,13 +137,18 @@ export default function ResponsePanel({ resp: propResp }) {
         </div>
       </div>
 
-      <div style={{ marginTop: 12 }}>
-        <strong>Top Insights</strong>
-        <div className="small-muted" style={{ marginTop: 6 }}>
-          {(resp.insights || resp.data?.insights || []).length === 0 ? "No automated insights generated." :
-            <ul>{(resp.insights || resp.data?.insights).map((s,i) => <li key={i}>{s}</li>)}</ul>}
+      {data.insights && data.insights.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <strong>AI Insights</strong>
+          <div className="small-muted" style={{ marginTop: 6 }}>
+            <ul style={{ paddingLeft: 20 }}>
+              {data.insights.map((s, i) => (
+                <li key={i} style={{ marginBottom: 6 }}>{s}</li>
+              ))}
+            </ul>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
