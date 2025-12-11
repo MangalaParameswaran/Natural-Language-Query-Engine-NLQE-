@@ -20,3 +20,20 @@ Folders:
 
 Open: http://localhost:5173 -> frontend UI
 Backend: http://127.0.0.1:8000
+
+
+flowchart LR
+  UI[React (Vite) UI]
+  UI -->|NL Query| BackendAPI[FastAPI / API Gateway]
+  BackendAPI --> LLM[OpenAI GPT (LLM)]
+  BackendAPI --> Planner[Query Planner / Intent Detector]
+  Planner --> DB[PostgreSQL]
+  DB --> BackendAPI
+  BackendAPI --> FEChart[Visualization Engine / Chart metadata]
+  FEChart --> UI
+  subgraph optional
+    Memory[Memory Layer / Cache]
+    Feedback[User Feedback Loop]
+  end
+  LLM --- Memory
+  BackendAPI --- Feedback

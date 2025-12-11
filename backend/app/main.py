@@ -1,36 +1,44 @@
 # app/main.py
+
+# >>> CHANGE START (imports organized)
 import os
 from fastapi import FastAPI
-from app.db import connect_db, disconnect_db
-from app.core import add_cors
 from dotenv import load_dotenv
-load_dotenv()
 
+from app.core import add_cors
+from app.db import connect_db, disconnect_db
 from app.api import router as api_router
+
+load_dotenv()
 
 app = FastAPI(title="AI-NLE-POC - Backend")
 
-# Debug print (remove later)
-print("-------Loaded OPENAI_API_KEY:-------", os.getenv("OPENAI_API_KEY"))
+# Centralized CORS configuration
 add_cors(app)
+
+# Clean API routing
 app.include_router(api_router, prefix="/api")
 
+
+# Enterprise-style startup hook
 @app.on_event("startup")
 async def startup_event():
-    # try to connect to DB (if available) but don't fail hard in POC
     try:
         await connect_db()
-        print("--------Connected to database--------")
+        print("✅ Database connected")
     except Exception as e:
-        print("--------Database connection failed (continuing in mock mode):--------", e)
+        print("❌ Database connection failed:", e)
 
+
+# Enterprise-style shutdown hook
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
         await disconnect_db()
-        print("--------Disconnected database--------")
+        print("🔌 Database connection closed")
     except Exception as e:
-        print("--------DB disconnect error:--------", e)
+        print("❌ DB disconnect error:", e)
+
 
 @app.get("/health")
 async def health():

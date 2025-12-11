@@ -1,6 +1,8 @@
+# app/api.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Any, Dict
+
 from app.llm import parse_natural_query
 from app.db import run_sql
 
@@ -14,36 +16,43 @@ class QueryResponse(BaseModel):
     message: str
     data: Dict[str, Any] = {}
 
+
 @router.post("/query", response_model=QueryResponse)
 async def run_query(req: QueryRequest):
     q = req.query.strip()
     if not q:
-        raise HTTPException(status_code=400, detail="query is empty")
+        raise HTTPException(status_code=400, detail="Query field cannot be empty")
 
-    # STEP 1 — LLM parse
+    # Step 1 — LLM natural language → SQL conversion
     parsed = await parse_natural_query(q)
 
-    sql = parsed.get("sql", "SELECT 1;")
+    sql = parsed.get("sql", "").strip()
+    if not sql:
+        return {
+            "status": "error",
+            "message": "LLM did not return SQL",
+            "data": parsed
+        }
 
-    # STEP 2 — Execute SQL
+    # Step 2 — Execute SQL safely
     result = run_sql(sql)
 
     rows = result.get("rows", [])
     cols = result.get("columns", [])
-    err  = result.get("error")
-
+    err = result.get("error")
     parsed["data_rows"] = rows
     parsed["data_columns"] = cols
     parsed["sql_error"] = err
 
-    # NEW CHECK — If no data returned
+    # If SQL error
     if err:
         return {
             "status": "error",
-            "message": "SQL execution error",
+            "message": "SQL execution failed",
             "data": parsed
         }
 
+    # No data
     if len(rows) == 0:
         return {
             "status": "ok",
