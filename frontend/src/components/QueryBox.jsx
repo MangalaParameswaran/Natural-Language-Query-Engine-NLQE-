@@ -1,84 +1,215 @@
-// components/QueryBox.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
-
-/*
-  🔧 CHANGED: QueryBox now updates global window.latestResponse so ResponsePanel can read without prop drilling.
-  ⭐ IMPROVED: Adds history, simple validation, and friendly UI.
-*/
 
 export default function QueryBox() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
+  const [isListening, setIsListening] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+
+  // ---------- Load history ----------
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("queryHistory");
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setHistory(parsed);
+      } else {
+        setHistory([]);
+      }
+    } catch (e) {
+      console.warn("History corrupted → clearing", e);
+      localStorage.removeItem("queryHistory");
+      setHistory([]);
+    }
+  }, []);
+
+  // ---------- Save history ----------
+  useEffect(() => {
+    localStorage.setItem("queryHistory", JSON.stringify(history));
+  }, [history]);
 
   const submit = async () => {
     setError(null);
     if (!query || query.trim().length < 3) {
-      setError("Please type a longer query (e.g. 'Show revenue by month').");
+      setError("Please type a longer query.");
       return;
     }
+
     setLoading(true);
 
     try {
-      const r = await axios.post("http://127.0.0.1:8000/api/query", { query });
-      // 🔧 CHANGED: save response into a shared place for ResponsePanel
-      window.latestResponse = r.data;
-      // also update history
-      setHistory(prev => [{ q: query, ts: Date.now(), resp: r.data }, ...prev].slice(0, 10));
-      // update insights panel if present
-      const insPanel = document.getElementById("insights-panel");
-      if (insPanel) {
-        insPanel.innerHTML = ""; // clear
-        (r.data?.rows || []).slice(0,3).forEach((row, i) => {
-          const el = document.createElement("div");
-          el.style.color = "var(--muted)";
-          el.style.fontSize = "13px";
-          el.textContent = `${i+1}. ${r.data.columns?.[0] || "col0"}: ${row[0]}  ${r.data.columns?.[1] ? ` | ${r.data.columns[1]}: ${row[1]}` : ""}`;
-          insPanel.appendChild(el);
-        });
-        if ((r.data?.rows || []).length === 0) {
-          const el = document.createElement("div");
-          el.style.color = "var(--muted)";
-          el.textContent = "No rows returned.";
-          insPanel.appendChild(el);
-        }
-      }
-      // trigger manual event so ResponsePanel can refresh
+      // Uncomment below when backend is ready
+      // const r = await axios.post("http://localhost:8000/api/query", { query });
+      // window.latestResponse = r.data;
+
+      const newHistory = [{ q: query, ts: Date.now() }, ...history].slice(0, 10);
+      setHistory(newHistory);
+
+      setSuggestions([]);
       window.dispatchEvent(new CustomEvent("ai-response-updated"));
     } catch (e) {
-      console.error(e);
-      setError(e.response?.data?.detail || e.message || "Unknown error");
+      setError(e.response?.data?.detail || e.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const applyExample = (ex) => {
-    setQuery(ex);
+  // ---------- Voice Input ----------
+  const startListening = () => {
+    if (!("webkitSpeechRecognition" in window)) {
+      setError("Voice input is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new window.webkitSpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setError(null);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setQuery(transcript);
+      setIsListening(false);
+      recognition.stop();
+      submit();
+    };
+
+    recognition.onerror = (event) => {
+      setError("Voice input error: " + event.error);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => setIsListening(false);
+
+    recognition.start();
   };
+
+  const applyExample = (ex) => setQuery(ex);
 
   return (
     <div>
-      <div style={{ marginBottom: 8 }} className="small-muted">Enter natural language analytics query</div>
-      <div className="query-input">
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder='Try: "Show monthly revenue last year by region"' />
-        <button onClick={submit} disabled={loading}>{loading ? "Running..." : "Run"}</button>
+      <div style={{ marginBottom: 8 }} className="small-muted">
+        Enter natural language analytics query
       </div>
+
+      {/* Input with suggestions */}
+      <div style={{ position: "relative" }}>
+        <input
+          value={query}
+          onChange={(e) => {
+            const value = e.target.value;
+            setQuery(value);
+
+            if (value.trim().length > 0) {
+              const filtered = history.filter((h) =>
+                h.q.toLowerCase().includes(value.toLowerCase())
+              );
+              setSuggestions(filtered.slice(0, 5));
+            } else {
+              setSuggestions([]);
+            }
+          }}
+          placeholder='Try: "Show monthly revenue last year by region"'
+          style={{ width: "100%", padding: "8px" }}
+        />
+
+        {suggestions.length > 0 && (
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #ddd",
+              marginTop: 2,
+              borderRadius: 4,
+              position: "absolute",
+              zIndex: 9999,
+              width: "100%",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              maxHeight: "200px",
+              overflowY: "auto",
+              padding: "4px 0",
+            }}
+          >
+            {suggestions.map((s, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  borderBottom: i !== suggestions.length - 1 ? "1px solid #eee" : "none",
+                  backgroundColor: "#fff",
+                  color: "#000", // Black text visible
+                }}
+                onMouseDown={() => {
+                  setQuery(s.q);
+                  setSuggestions([]);
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#f0f0f0"}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#fff"}
+              >
+                {s.q}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Buttons */}
+      <div
+        className="query-input"
+        style={{ marginTop: 8, display: "flex", gap: "8px", flexWrap: "wrap" }}
+      >
+        <button
+          onClick={startListening}
+          disabled={isListening}
+          style={{ flex: "1 1 auto", minWidth: 120 }}
+        >
+          {isListening ? "Listening..." : "🎤 Voice Input"}
+        </button>
+
+        <button
+          onClick={submit}
+          disabled={loading}
+          style={{ flex: "1 1 auto", minWidth: 120 }}
+        >
+          {loading ? "Running..." : "Run"}
+        </button>
+      </div>
+
       {error && <div style={{ color: "#ffb4b4", marginTop: 8 }}>{error}</div>}
 
+      {/* Examples */}
       <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-        <button onClick={() => applyExample("Show monthly revenue last year by region")}>Example 1</button>
-        <button onClick={() => applyExample("Top 10 customers by profit")}>Example 2</button>
-        <button onClick={() => applyExample("Compare sales vs marketing spend by quarter")}>Example 3</button>
+        <button onClick={() => applyExample("Show monthly revenue last year by region")}>
+          Example 1
+        </button>
+        <button onClick={() => applyExample("Top 10 customers by profit")}>
+          Example 2
+        </button>
+        <button onClick={() => applyExample("Compare sales vs marketing spend by quarter")}>
+          Example 3
+        </button>
       </div>
 
+      {/* History */}
       {history.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div className="small-muted">Recent</div>
+          <h3>History</h3>
           <ul style={{ marginTop: 6 }}>
-            {history.map((h, i) => <li key={i} className="small-muted">{new Date(h.ts).toLocaleTimeString()} — {h.q}</li>)}
+            {history.map((h, i) => (
+              <li key={i} className="small-muted">
+                {new Date(h.ts).toLocaleTimeString()} — {h.q}
+              </li>
+            ))}
           </ul>
         </div>
       )}
